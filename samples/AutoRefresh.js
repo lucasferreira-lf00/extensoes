@@ -12,6 +12,11 @@
         updateExtensionBasedOnSettings(settingsEvent.newSettings);
       });
 
+      // Adiciona um ouvinte para o evento de fechamento do painel
+      tableau.extensions.dashboardContent.dashboard.addEventListener(tableau.TableauEventType.WindowClosed, function() {
+        stopExtension();
+      });
+
       // Inicia a extensão apenas quando o painel é aberto
       startExtension();
     });

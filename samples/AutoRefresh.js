@@ -21,21 +21,31 @@
   let activeDatasourceIdList = [];
 
   $(document).ready(function () {
-    // When initializing an extension, an optional object is passed that maps a special ID (which
-    // must be 'configure') to a function.  This, in conjuction with adding the correct context menu
-    // item to the manifest, will add a new "Configure..." context menu item to the zone of extension
-    // inside a dashboard.  When that context menu item is clicked by the user, the function passed
-    // here will be executed.
-    tableau.extensions.initializeAsync({'configure': configure}).then(function() {     
-      // This event allows for the parent extension and popup extension to keep their
-      // settings in sync.  This event will be triggered any time a setting is
-      // changed for this extension, in the parent or popup (i.e. when settings.saveAsync is called).
-	  getSettings();
-	  
-      tableau.extensions.settings.addEventListener(tableau.TableauEventType.SettingsChanged, (settingsEvent) => {
-        updateExtensionBasedOnSettings(settingsEvent.newSettings)
+    // Check if Tableau Extensions API is available
+    if (tableau.extensions) {
+      tableau.extensions.initializeAsync({'configure': configure}).then(function() {     
+        // This event is triggered when the dashboard has finished loading
+        tableau.extensions.dashboardContent.dashboard.worksheets.forEach(function (worksheet) {
+          worksheet.addEventListener(tableau.TableauEventType.FilterChanged, function() {
+            // Start refreshing datasources when the dashboard is loaded or filters are changed
+            startRefreshInterval();
+          });
+        });
+        
+        // This event allows for the parent extension and popup extension to keep their
+        // settings in sync.  This event will be triggered any time a setting is
+        // changed for this extension, in the parent or popup (i.e. when settings.saveAsync is called).
+        getSettings();
+          
+        tableau.extensions.settings.addEventListener(tableau.TableauEventType.SettingsChanged, (settingsEvent) => {
+          updateExtensionBasedOnSettings(settingsEvent.newSettings)
+        });
       });
-    });
+    } else {
+      // Tableau Extensions API not available, do something else or just exit gracefully
+      console.log("Tableau Extensions API is not available. Exiting.");
+      return;
+    }
   });
 
   function getSettings() {
@@ -43,17 +53,17 @@
     if (currentSettings.selectedDatasources) {
       activeDatasourceIdList = JSON.parse(currentSettings.selectedDatasources);
     }  
-	if (currentSettings.intervalkey){
-	  interval2 = currentSettings.intervalkey;
-	}
-	if (currentSettings.selectedDatasources){
-		$('#inactive').hide();
-		$('#active').show();
-		$('#interval').text(currentSettings.intervalkey);
-		$('#datasourceCount').text(activeDatasourceIdList.length);
-		setupRefreshInterval(interval2);
-	}
-  }	  
+    if (currentSettings.intervalkey){
+      interval2 = currentSettings.intervalkey;
+    }
+    if (currentSettings.selectedDatasources){
+      $('#inactive').hide();
+      $('#active').show();
+      $('#interval').text(currentSettings.intervalkey);
+      $('#datasourceCount').text(activeDatasourceIdList.length);
+      setupRefreshInterval(interval2);
+    }
+  }  
   
   function configure() {
     // This uses the window.location.origin property to retrieve the scheme, hostname, and 

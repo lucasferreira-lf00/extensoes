@@ -26,6 +26,7 @@
    */
   const datasourcesSettingsKey = 'selectedDatasources';
   const intervalkey = 'intervalkey';
+  const configured = 'configured'
   let selectedDatasources = [];
 
   $(document).ready(function () {
@@ -43,7 +44,15 @@
 
       let dashboard = tableau.extensions.dashboardContent.dashboard;
       let visibleDatasources = [];
+      if (tableau.extensions.settings.get('configured') == 1) {
+        $('#interval').val(tableau.extensions.settings.get('intervalkey'));
+      } else {
+        $('#interval').val(60);
+      }
+        
+      // Load saved selected data sources
       selectedDatasources = parseSettingsForActiveDataSources();
+
 
       // Loop through datasources in this sheet and create a checkbox UI 
       // element for each one.  The existing settings are used to 
@@ -121,8 +130,9 @@
     let currentSettings = tableau.extensions.settings.getAll();
     tableau.extensions.settings.set(datasourcesSettingsKey, JSON.stringify(selectedDatasources));
     tableau.extensions.settings.set(intervalkey, $('#interval').val());
+    tableau.extensions.settings.set(configured, 1);
     tableau.extensions.settings.saveAsync().then((newSavedSettings) => {
-      tableau.extensions.ui.closeDialog($('#interval').val());
+    tableau.extensions.ui.closeDialog($('#interval').val());
     });
   }
 })();

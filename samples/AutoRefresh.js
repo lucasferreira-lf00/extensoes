@@ -21,31 +21,23 @@
   let activeDatasourceIdList = [];
 
   $(document).ready(function () {
-    // Check if Tableau Extensions API is available
-    if (tableau.extensions) {
-      tableau.extensions.initializeAsync({'configure': configure}).then(function() {     
-        // This event is triggered when the dashboard has finished loading
-        tableau.extensions.dashboardContent.dashboard.worksheets.forEach(function (worksheet) {
-          worksheet.addEventListener(tableau.TableauEventType.FilterChanged, function() {
-            // Start refreshing datasources when the dashboard is loaded or filters are changed
-            startRefreshInterval();
-          });
-        });
-        
-        // This event allows for the parent extension and popup extension to keep their
-        // settings in sync.  This event will be triggered any time a setting is
-        // changed for this extension, in the parent or popup (i.e. when settings.saveAsync is called).
-        getSettings();
-          
-        tableau.extensions.settings.addEventListener(tableau.TableauEventType.SettingsChanged, (settingsEvent) => {
-          updateExtensionBasedOnSettings(settingsEvent.newSettings)
-        });
+    // When initializing an extension, an optional object is passed that maps a special ID (which
+    // must be 'configure') to a function.  This, in conjuction with adding the correct context menu
+    // item to the manifest, will add a new "Configure..." context menu item to the zone of extension
+    // inside a dashboard.  When that context menu item is clicked by the user, the function passed
+    // here will be executed.
+    tableau.extensions.initializeAsync({'configure': configure}).then(function() {     
+      // This event allows for the parent extension and popup extension to keep their
+      // settings in sync.  This event will be triggered any time a setting is
+      // changed for this extension, in the parent or popup (i.e. when settings.saveAsync is called).
+	    getSettings();
+      tableau.extensions.settings.addEventListener(tableau.TableauEventType.SettingsChanged, (settingsEvent) => {
+        updateExtensionBasedOnSettings(settingsEvent.newSettings)
       });
-    } else {
-      // Tableau Extensions API not available, do something else or just exit gracefully
-      console.log("Tableau Extensions API is not available. Exiting.");
-      return;
-    }
+		  if (tableau.extensions.settings.get("configured") != 1) {
+				configure();
+	    }
+    });
   });
 
   function getSettings() {
@@ -53,17 +45,17 @@
     if (currentSettings.selectedDatasources) {
       activeDatasourceIdList = JSON.parse(currentSettings.selectedDatasources);
     }  
-    if (currentSettings.intervalkey){
-      interval2 = currentSettings.intervalkey;
-    }
-    if (currentSettings.selectedDatasources){
-      $('#inactive').hide();
-      $('#active').show();
-      $('#interval').text(currentSettings.intervalkey);
-      $('#datasourceCount').text(activeDatasourceIdList.length);
-      setupRefreshInterval(interval2);
-    }
-  }  
+	if (currentSettings.intervalkey){
+	  interval2 = currentSettings.intervalkey;
+	}
+	if (currentSettings.selectedDatasources){
+		$('#inactive').hide();
+		$('#active').show();
+		$('#interval').text(currentSettings.intervalkey);
+		$('#datasourceCount').text(activeDatasourceIdList.length);
+		setupRefreshInterval(interval2);
+	}
+  }	  
   
   function configure() {
     // This uses the window.location.origin property to retrieve the scheme, hostname, and 
@@ -108,19 +100,67 @@
    * This function sets up a JavaScript interval based on the time interval selected
    * by the user.  This interval will refresh all selected datasources.
    */
+
+  let uniqueDataSources = []; // Store unique data sources globally
+
   function setupRefreshInterval(interval) {
-    refreshInterval = setInterval(function() { 
+    // Clear any existing timeout to prevent overlapping refreshes
+    if (refreshInterval) {
+      clearTimeout(refreshInterval);
+    }
+  
+    // Function to update the "next refresh" time
+    function updateNextRefreshTime(interval) {
+      const nextRefresh = new Date(Date.now() + interval * 1000);
+      const formattedTime = nextRefresh.toLocaleTimeString(); // Format the time as HH:MM:SS
+      $('#nextrefresh').text(formattedTime); // Display the next refresh time
+    }
+  
+    // Function to collect unique data sources only once
+    function collectUniqueDataSources() {
       let dashboard = tableau.extensions.dashboardContent.dashboard;
-      dashboard.worksheets.forEach(function (worksheet) {
-        worksheet.getDataSourcesAsync().then(function (datasources) {
-          datasources.forEach(function (datasource) {
-             if (activeDatasourceIdList.indexOf(datasource.id) >= 0) {
-               datasource.refreshAsync();
-             }
+      let uniqueDataSourceIds = new Set(); // Use Set to store unique IDs and avoid duplicates
+      uniqueDataSources = []; // Reset uniqueDataSources array
+  
+      // Array to hold promises for each worksheet's data sources
+      let dataSourcePromises = dashboard.worksheets.map((worksheet) =>
+        worksheet.getDataSourcesAsync().then((datasources) => {
+          datasources.forEach((datasource) => {
+            // Only add to uniqueDataSources if the ID is unique
+            if (!uniqueDataSourceIds.has(datasource.id) && activeDatasourceIdList.includes(datasource.id)) {
+              uniqueDataSourceIds.add(datasource.id); // Track ID to avoid duplicates
+              uniqueDataSources.push(datasource); // Store the unique data source
+            }
           });
-        });
+        })
+      );
+  
+      // Return a Promise that resolves when all data sources have been collected
+      return Promise.all(dataSourcePromises);
+    }
+  
+    // Function to refresh the previously collected unique data sources
+    function refreshDataSources() {
+      if (refreshInterval) {
+        clearTimeout(refreshInterval);
+      }
+  
+      // Refresh each unique data source
+      const refreshPromises = uniqueDataSources.map((datasource) => datasource.refreshAsync());
+  
+      // Wait until all selected unique data sources are refreshed
+      Promise.all(refreshPromises).then(() => {
+        updateNextRefreshTime(interval);
+        refreshInterval = setTimeout(refreshDataSources, interval * 1000); // Schedule next refresh
       });
-    }, interval*1500);
+    }
+  
+    // Initial collection of unique data sources and setup of next refresh time
+    collectUniqueDataSources().then(() => {
+      $('#uniqueCount').text(uniqueDataSources.length); // Use length for array size
+      refreshDataSources(); // Start the refresh cycle after collecting data sources
+      updateNextRefreshTime(interval);
+    });
   }
 
   /**
